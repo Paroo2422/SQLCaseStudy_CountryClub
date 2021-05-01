@@ -33,35 +33,59 @@ exploring the data, and getting acquainted with the 3 tables. */
 /* QUESTIONS 
 /* Q1: Some of the facilities charge a fee to members, but some do not.
 Write a SQL query to produce a list of the names of the facilities that do. */
+select name from Facilities where membercost != 0 and membercost is not null
 
 
 /* Q2: How many facilities do not charge a fee to members? */
+select count(name) from Facilities where membercost = 0 or membercost is null
 
 
 /* Q3: Write an SQL query to show a list of facilities that charge a fee to members,
 where the fee is less than 20% of the facility's monthly maintenance cost.
 Return the facid, facility name, member cost, and monthly maintenance of the
 facilities in question. */
+select facid, name, membercost, monthlymaintenance 
+from Facilities 
+where membercost != 0 
+and membercost is not null
+and membercost < (0.2*monthlymaintenance)
 
 
 /* Q4: Write an SQL query to retrieve the details of facilities with ID 1 and 5.
 Try writing the query without using the OR operator. */
+select * from Facilities
+where facid in (1,5)
 
 
 /* Q5: Produce a list of facilities, with each labelled as
 'cheap' or 'expensive', depending on if their monthly maintenance cost is
 more than $100. Return the name and monthly maintenance of the facilities
 in question. */
+select name as facility_name, monthlymaintenance,
+case when monthlymaintenance > 100 then 'expensive'
+	 else 'cheap' end as 'cheap/expensive'
+from Facilities
 
 
 /* Q6: You'd like to get the first and last name of the last member(s)
 who signed up. Try not to use the LIMIT clause for your solution. */
+select firstname, surname, joindate 
+from Members
+order by joindate desc
+limit 2
 
 
 /* Q7: Produce a list of all members who have used a tennis court.
 Include in your output the name of the court, and the name of the member
 formatted as a single column. Ensure no duplicate data, and order by
 the member name. */
+select distinct CONCAT( f.name, "- ", m.firstname, " ", m.surname ) AS fullname
+from Facilities as f
+inner join Bookings as b
+on f.facid = b.facid
+inner join Members as m
+on b.memid = m.memid
+where f.name like 'Tennis Court%'
 
 
 /* Q8: Produce a list of bookings on the day of 2012-09-14 which
@@ -70,9 +94,35 @@ different costs to members (the listed costs are per half-hour 'slot'), and
 the guest user's ID is always 0. Include in your output the name of the
 facility, the name of the member formatted as a single column, and the cost.
 Order by descending cost, and do not use any subqueries. */
+select f.name as facility_name, 
+CONCAT(m.firstname, " ", m.surname) as member_name, 
+case when b.memid = 0 then (b.slots * f.guestcost)
+	 else (b.slots * f.membercost) end as 'booking_cost'
+from  Facilities as f
+inner join Bookings as b
+on b.facid = f.facid
+inner join Members as m
+on b.memid = m.memid
+where (case when b.memid = 0 then (b.slots * f.guestcost)
+	 else (b.slots * f.membercost) end) >30 
+and b.starttime like '2012-09-14%'
+order by booking_cost desc
 
 
 /* Q9: This time, produce the same result as in Q8, but using a subquery. */
+select BookingDetails.name , CONCAT(m.firstname, " ", m.surname) as member_name, BookingDetails.booking_cost
+from Members as m
+inner join
+(select f.name, b.memid, b.starttime,
+(case when b.memid = 0 then (b.slots * f.guestcost)
+	 else (b.slots * f.membercost) end) as 'booking_cost'
+from  Facilities as f
+inner join Bookings as b
+on b.facid = f.facid) BookingDetails
+on m.memid = BookingDetails.memid
+where BookingDetails.booking_cost > 30
+and BookingDetails.starttime like '2012-09-14%'
+order by booking_cost desc
 
 
 /* PART 2: SQLite
@@ -80,7 +130,7 @@ Order by descending cost, and do not use any subqueries. */
 
 Copy and paste the LocalSQLConnection.py script into an empty Jupyter notebook, and run it. 
 
-Make sure that the SQLFiles folder containing thes files is in your working directory, and
+Make sure that the SQLFiles folder containing these files is in your working directory, and
 that you haven't changed the name of the .db file from 'sqlite\db\pythonsqlite'.
 
 You should see the output from the initial query 'SELECT * FROM FACILITIES'.
@@ -94,12 +144,66 @@ QUESTIONS:
 /* Q10: Produce a list of facilities with a total revenue less than 1000.
 The output of facility name and total revenue, sorted by revenue. Remember
 that there's a different cost for guests and members! */
+select BookingDetails.name, (sum(BookingDetails.booking_cost) - f1.monthlymaintenance) as revenue
+from
+(select f.name,f.facid,
+(case when b.memid = 0 then (b.slots * f.guestcost)
+	 else (b.slots * f.membercost) end) as 'booking_cost'
+from  Facilities as f
+inner join Bookings as b
+on b.facid = f.facid) as BookingDetails
+inner join Facilities f1
+on BookingDetails.facid = f1.facid
+group by BookingDetails.name,f1.monthlymaintenance
+having revenue <1000
+order by revenue 
+
 
 /* Q11: Produce a report of members and who recommended them in alphabetic surname,firstname order */
+select CONCAT(m1.surname, ", ", m1.firstname) as member, CONCAT(m2.surname, ", ", m2.firstname) as recommended_by
+from Members as m1
+inner join Members as m2
+on m1.recommendedby = m2.memid
+order by member, recommended_by
+
+/* For Sqlite3 jupyter notebook*/
+select (m1.surname || m1.firstname) as member, (m2.surname || m2.firstname) as recommended_by
+from Members as m1
+inner join Members as m2
+on m1.recommendedby = m2.memid
+order by member, recommended_by
 
 
 /* Q12: Find the facilities with their usage by member, but not guests */
+select  f.name as facility_name, CONCAT(m.firstname, " ", m.surname ) AS member, count(b.bookid) as usage_count
+from Facilities as f
+inner join Bookings as b
+on f.facid = b.facid
+inner join Members as m
+on b.memid = m.memid
+where b.memid != 0
+group by facility_name, member
+order by member asc, b.starttime asc
+
+/* For Sqlite3 jupyter notebook*/
+select  f.name as facility_name, (m.firstname || m.surname ) AS member, count(b.bookid) as usage_count
+from Facilities as f
+inner join Bookings as b
+on f.facid = b.facid
+inner join Members as m
+on b.memid = m.memid
+where b.memid != 0
+group by facility_name, member
+order by member asc, b.starttime asc
 
 
 /* Q13: Find the facilities usage by month, but not guests */
+select EXTRACT( MONTH FROM b.starttime ) as Month, f.name as facility_name, count(b.bookid) as usage_count
+from Facilities as f
+inner join Bookings as b
+on f.facid = b.facid
+where b.memid != 0
+group by Month, facility_name
+order by Month asc, facility_name asc
+
 
